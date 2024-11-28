@@ -7,7 +7,8 @@ using System.Collections.Generic;
 
 public class AdvancedTextureToolEditor : EditorWindow
 {
-    private Texture2D sourceTexture;
+    private Texture2D quickConvertSourceTexture;
+    private Texture2D splitModeSourceTexture;
     private Texture2D rChannel, gChannel, bChannel, aChannel;
     private int currentTab = 0;
     private string quickConvertFileName = "CombinedTexture_QuickConvert";
@@ -21,6 +22,9 @@ public class AdvancedTextureToolEditor : EditorWindow
     private string[] textureOptions = { "None", "Metallic", "Roughness", "AO", "Height", "Glossiness", "Specular", "Emission Mask", "Opacity", "Translucency", "Cavity", "Detail Mask", "Thickness", "Subsurface Mask", "Curvature", "Dirt Mask" };
 
     private string[] splitChannelNames = { "Metallic", "Roughness", "AO", "Alpha" };
+    private string quickConvertExportPath = "";  // Quick Convert 模式的导出路径
+    private string splitModeExportPath = "";     // Split 模式的导出路径
+    private string manualCombinationExportPath = "";  // Manual Combination 模式的导出路径
     
     // 添加这个变量
     private Texture2D[] channelPreviews = new Texture2D[4];
@@ -31,7 +35,7 @@ public class AdvancedTextureToolEditor : EditorWindow
         GetWindow<AdvancedTextureToolEditor>("Advanced Texture Tool");
     }
 
-    private void OnGUI()
+     private void OnGUI()
     {
         currentTab = GUILayout.Toolbar(currentTab, new string[] { "Quick Convert Mode", "Split Mode", "Manual Combination Mode" });
 
@@ -48,17 +52,13 @@ public class AdvancedTextureToolEditor : EditorWindow
             DisplayManualCombinationMode();
         }
 
-        // 显示预览图像
         Texture2D previewTexture = GetCurrentPreviewTexture();
-        //Debug.Log(previewTexture==null);
         if (previewTexture != null)
         {
             GUILayout.Label("Preview Image", EditorStyles.boldLabel);
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
-            //Debug.Log(currentTab);
 
-            // 如果格式不支持 GUI 显示，转换为支持的格式
             if (previewTexture.format != TextureFormat.RGBA32 && previewTexture.format != TextureFormat.ARGB32)
             {
                 previewTexture = ConvertToSupportedFormat(previewTexture);
@@ -68,7 +68,6 @@ public class AdvancedTextureToolEditor : EditorWindow
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }
-
     }
 
 
@@ -76,15 +75,14 @@ public class AdvancedTextureToolEditor : EditorWindow
     {
         GUILayout.Label("Quick Convert Mode", EditorStyles.boldLabel);
 
-        sourceTexture = (Texture2D)EditorGUILayout.ObjectField("Select Texture to Convert", sourceTexture, typeof(Texture2D), false);
+        quickConvertSourceTexture = (Texture2D)EditorGUILayout.ObjectField("Select Texture to Convert", quickConvertSourceTexture, typeof(Texture2D), false);
 
-        if (sourceTexture != null)
+        if (quickConvertSourceTexture != null)
         {
-            EnsureTextureIsReadable(sourceTexture);
+            EnsureTextureIsReadable(quickConvertSourceTexture);
 
             GUILayout.Label("Original Channels", EditorStyles.boldLabel);
 
-            // Original channels setup
             GUILayout.BeginHorizontal();
             GUILayout.Label("R Channel:");
             leftSelection[0] = EditorGUILayout.Popup(leftSelection[0], textureOptions);
@@ -105,74 +103,56 @@ public class AdvancedTextureToolEditor : EditorWindow
             leftSelection[3] = EditorGUILayout.Popup(leftSelection[3], textureOptions);
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(10);
-
             GUILayout.Label("Target Channels", EditorStyles.boldLabel);
 
-            // Target channel setup
             string[] filteredOptions = GetSelectedTextureOptions(leftSelection);
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Target R Channel:");
-            rightSelection[0] = Mathf.Clamp(rightSelection[0], 0, filteredOptions.Length - 1);
-            int targetRIndex = EditorGUILayout.Popup(rightSelection[0], filteredOptions);
-            rightSelection[0] = Array.IndexOf(textureOptions, filteredOptions[targetRIndex]);
+            rightSelection[0] = EditorGUILayout.Popup(rightSelection[0], filteredOptions);
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Target G Channel:");
-            rightSelection[1] = Mathf.Clamp(rightSelection[1], 0, filteredOptions.Length - 1);
-            int targetGIndex = EditorGUILayout.Popup(rightSelection[1], filteredOptions);
-            rightSelection[1] = Array.IndexOf(textureOptions, filteredOptions[targetGIndex]);
+            rightSelection[1] = EditorGUILayout.Popup(rightSelection[1], filteredOptions);
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Target B Channel:");
-            rightSelection[2] = Mathf.Clamp(rightSelection[2], 0, filteredOptions.Length - 1);
-            int targetBIndex = EditorGUILayout.Popup(rightSelection[2], filteredOptions);
-            rightSelection[2] = Array.IndexOf(textureOptions, filteredOptions[targetBIndex]);
+            rightSelection[2] = EditorGUILayout.Popup(rightSelection[2], filteredOptions);
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Target Alpha Channel:");
-            rightSelection[3] = Mathf.Clamp(rightSelection[3], 0, filteredOptions.Length - 1);
-            int targetAIndex = EditorGUILayout.Popup(rightSelection[3], filteredOptions);
-            rightSelection[3] = Array.IndexOf(textureOptions, filteredOptions[targetAIndex]);
+            rightSelection[3] = EditorGUILayout.Popup(rightSelection[3], filteredOptions);
             GUILayout.EndHorizontal();
-
-            GUILayout.Space(10);
 
             quickConvertFileName = EditorGUILayout.TextField("Export File Name:", quickConvertFileName);
 
             if (GUILayout.Button("Convert"))
             {
-                Texture2D combinedTexture = CombineChannels(sourceTexture, leftSelection, rightSelection);
-                Debug.Log($"Left Selection: {string.Join(", ", leftSelection)}");
-                Debug.Log($"Right Selection: {string.Join(", ", rightSelection)}");
-                if (combinedTexture != null)
-                {
-                    ShowPreview(combinedTexture, ref quickConvertPreviewTexture);
-                    Debug.Log("Combined texture generated successfully.");
-                }
-                else
-                {
-                    Debug.LogError("Failed to generate combined texture.");
-                }
+                Texture2D combinedTexture = CombineChannels(quickConvertSourceTexture, rightSelection);
+                ShowPreview(combinedTexture, ref quickConvertPreviewTexture);
             }
 
             if (GUILayout.Button("Export"))
             {
-                Texture2D combinedTexture = CombineChannels(sourceTexture, leftSelection, rightSelection);
-                ExportTexture(combinedTexture, quickConvertFileName);
+    Texture2D combinedTexture = CombineChannels(quickConvertSourceTexture, rightSelection);
+    ShowPreview(combinedTexture, ref quickConvertPreviewTexture);
+    ExportTextureWithCustomPath(combinedTexture, ref quickConvertExportPath, quickConvertFileName);
             }
 
             if (GUILayout.Button("Clear Selections"))
             {
-                sourceTexture = null;
-                quickConvertPreviewTexture = null;
-                leftSelection = new int[4] { 0, 1, 2, 3 }; // Reset default
-                rightSelection = new int[4] { 0, 1, 2, 3 }; // Reset default
-                Debug.Log("Quick Convert Mode Cleared");
+        quickConvertSourceTexture = null;
+    quickConvertPreviewTexture = null;
+    leftSelection = new int[4];
+    rightSelection = new int[4];
+
+    // 清空路径
+    quickConvertExportPath = "";
+
+    Debug.Log("All settings in Quick Convert Mode have been cleared, including export path.");
             }
         }
         else
@@ -181,6 +161,125 @@ public class AdvancedTextureToolEditor : EditorWindow
         }
     }
 
+
+private void DisplaySplitTextureMode()
+{
+    GUILayout.Label("Split Mode", EditorStyles.boldLabel);
+
+    splitModeSourceTexture = (Texture2D)EditorGUILayout.ObjectField("Source Texture", splitModeSourceTexture, typeof(Texture2D), false);
+
+    if (splitModeSourceTexture != null)
+    {
+        EnsureTextureIsReadable(splitModeSourceTexture);
+
+        if (GUILayout.Button("Split"))
+        {
+     SplitTextureInBackground(splitModeSourceTexture, previews =>
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            channelPreviews[i] = previews[i];
+        }
+    });
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Channel {i + 1} Preview:");
+
+            if (channelPreviews[i] != null)
+            {
+                GUILayout.Label(new GUIContent(channelPreviews[i]), GUILayout.Width(64), GUILayout.Height(64));
+            }
+            else
+            {
+                GUILayout.Label("No Preview Available", GUILayout.Width(128));
+            }
+
+            GUILayout.Label("File Name:");
+            splitChannelNames[i] = GUILayout.TextField(splitChannelNames[i], GUILayout.Width(200));
+            GUILayout.EndHorizontal();
+        }
+
+        if (GUILayout.Button("Export All Channels"))
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                if (channelPreviews[i] != null && !string.IsNullOrEmpty(splitChannelNames[i]))
+                {
+                    string fileName = $"{splitChannelNames[i]}.png";
+                ExportSplitTextures(channelPreviews, splitChannelNames, ref splitModeExportPath);
+                }
+                else if (string.IsNullOrEmpty(splitChannelNames[i]))
+                {
+                    Debug.LogWarning($"Channel {i + 1} skipped because no file name was provided.");
+                }
+            }
+        }
+
+        if (GUILayout.Button("Clear All"))
+        {
+        // 清空纹理和预览
+    splitModeSourceTexture = null;
+    for (int i = 0; i < 4; i++)
+    {
+        channelPreviews[i] = null;
+        splitChannelNames[i] = $"Channel {i + 1}";
+    }
+
+    // 清空路径
+    splitModeExportPath = "";
+
+    Debug.Log("All settings in Split Mode have been cleared, including export path.");
+        }
+    
+    }
+    else
+    {
+        GUILayout.Label("Please select a source texture to split.");
+    }
+}
+
+
+    private void DisplayManualCombinationMode()
+    {
+        GUILayout.Label("Manual Combination Mode", EditorStyles.boldLabel);
+
+        rChannel = (Texture2D)EditorGUILayout.ObjectField("Red Channel", rChannel, typeof(Texture2D), false);
+        gChannel = (Texture2D)EditorGUILayout.ObjectField("Green Channel", gChannel, typeof(Texture2D), false);
+        bChannel = (Texture2D)EditorGUILayout.ObjectField("Blue Channel", bChannel, typeof(Texture2D), false);
+        aChannel = (Texture2D)EditorGUILayout.ObjectField("Alpha Channel", aChannel, typeof(Texture2D), false);
+
+        manualCombinationFileName = EditorGUILayout.TextField("Export File Name", manualCombinationFileName);
+
+        if (GUILayout.Button("Combine Channels"))
+        {
+            Texture2D combinedTexture = CombineChannels(rChannel, gChannel, bChannel, aChannel);
+            ShowPreview(combinedTexture, ref manualCombinationPreviewTexture);
+        }
+
+        if (GUILayout.Button("Export Combined Texture"))
+        {
+    Texture2D combinedTexture = CombineChannels(rChannel, gChannel, bChannel, aChannel);
+    ShowPreview(combinedTexture, ref manualCombinationPreviewTexture);
+    ExportTextureWithCustomPath(combinedTexture, ref manualCombinationExportPath, manualCombinationFileName);
+
+        if (GUILayout.Button("Clear Selections"))
+        {
+       rChannel = null;
+    gChannel = null;
+    bChannel = null;
+    aChannel = null;
+    manualCombinationPreviewTexture = null;
+
+    // 清空路径
+    manualCombinationExportPath = "";
+
+    Debug.Log("All settings in Manual Combination Mode have been cleared, including export path.");
+        }
+    }
+    }
 
 
 
@@ -202,123 +301,7 @@ public class AdvancedTextureToolEditor : EditorWindow
 }
 
 
-  private void DisplaySplitTextureMode()
-{
-    GUILayout.Label("Split Mode", EditorStyles.boldLabel);
-
-    // 用户选择的源纹理
-    sourceTexture = (Texture2D)EditorGUILayout.ObjectField("Source Texture", sourceTexture, typeof(Texture2D), false);
-
-    if (sourceTexture != null)
-    {
-        EnsureTextureIsReadable(sourceTexture);
-
-        GUILayout.Space(10);
-        GUILayout.Label("Preview Channel Textures", EditorStyles.boldLabel);
-
-        // “拆分”按钮，生成通道预览
-        if (GUILayout.Button("Split"))
-{
-    SplitTextureInBackground(sourceTexture, previews =>
-    {
-        for (int i = 0; i < 4; i++)
-        {
-            channelPreviews[i] = previews[i]; // 更新预览
-        }
-        Debug.Log("Texture successfully split into channels.");
-    });
-}
-
-        // 显示每个通道的预览和文件名输入框
-        for (int i = 0; i < 4; i++)
-        {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"Channel {i + 1} Preview:");
-
-            // 如果通道预览已生成，显示预览图
-            if (channelPreviews[i] != null)
-            {
-                GUILayout.Label(new GUIContent(channelPreviews[i]), GUILayout.Width(64), GUILayout.Height(64));
-            }
-            else
-            {
-                GUILayout.Label("No Preview Available", GUILayout.Width(128));
-            }
-
-            // 文件名输入框
-            GUILayout.Label("File Name:");
-            splitChannelNames[i] = GUILayout.TextField(splitChannelNames[i], GUILayout.Width(200));
-            GUILayout.EndHorizontal();
-        }
-
-        GUILayout.Space(10);
-
-        // 导出所有通道
-        if (GUILayout.Button("Export All Channels"))
-        {
-            ExportSplitTextures(channelPreviews, splitChannelNames);
-        }
-
-        // 清空所有设置
-        if (GUILayout.Button("Clear All"))
-{
-    sourceTexture = null; // 清空源纹理
-    for (int i = 0; i < 4; i++)
-    {
-        channelPreviews[i] = null; // 清空通道预览
-        splitChannelNames[i] = $"Channel {i + 1}"; // 重置文件名为默认值
-    }
-    Debug.Log("Split Mode cleared.");
-}
-    }
-    else
-    {
-        GUILayout.Label("Please select a source texture to split.");
-    }
-}
-
-
-    private void DisplayManualCombinationMode()
-    {
-        GUILayout.Label("Manual Combination Mode", EditorStyles.boldLabel);  // Manual Combination Mode title
-
-        // Manually select each channel
-        rChannel = (Texture2D)EditorGUILayout.ObjectField("Red Channel", rChannel, typeof(Texture2D), false);  // Select texture for red channel
-        EnsureTextureIsReadable(rChannel);
-        gChannel = (Texture2D)EditorGUILayout.ObjectField("Green Channel", gChannel, typeof(Texture2D), false);  // Select texture for green channel
-        EnsureTextureIsReadable(gChannel);
-        bChannel = (Texture2D)EditorGUILayout.ObjectField("Blue Channel", bChannel, typeof(Texture2D), false);  // Select texture for blue channel
-        EnsureTextureIsReadable(bChannel);
-        aChannel = (Texture2D)EditorGUILayout.ObjectField("Alpha Channel", aChannel, typeof(Texture2D), false);  // Select texture for alpha channel
-        EnsureTextureIsReadable(aChannel);
-
-        // Custom export file name
-        manualCombinationFileName = EditorGUILayout.TextField("Export File Name", manualCombinationFileName);  // User inputs export file name
-
-        if (GUILayout.Button("Combine Channels"))
-        {
-            Texture2D combinedTexture = CombineChannels(rChannel, gChannel, bChannel, aChannel);  // Perform channel combination
-            ShowPreview(combinedTexture, ref manualCombinationPreviewTexture);  // Display preview of combined result
-        }
-
-        if (GUILayout.Button("Export Combined Texture"))
-        {
-            Texture2D combinedTexture = CombineChannels(rChannel, gChannel, bChannel, aChannel);  // Perform channel combination
-            ExportTexture(combinedTexture, manualCombinationFileName);  // Export combined result
-        }
-
-        if (GUILayout.Button("Clear Selections"))
-        {
-            rChannel = null;
-            gChannel = null;
-            bChannel = null;
-            aChannel = null;
-            manualCombinationPreviewTexture = null;  // Clear preview image
-            Debug.Log("Manual Combination Mode Cleared");  // Log: Clear operation
-        }
-    }
-
-    private async void SplitTextureInBackground(Texture2D texture, Action<Texture2D[]> callback)
+private async void SplitTextureInBackground(Texture2D texture, Action<Texture2D[]> callback)
 {
     if (texture == null)
     {
@@ -358,13 +341,7 @@ public class AdvancedTextureToolEditor : EditorWindow
     for (int i = 0; i < 4; i++)
     {
         previews[i] = new Texture2D(width, height, TextureFormat.RGBA32, false);
-        for (int x = 0; x < width; x++)
-        {
-            for (int y = 0; y < height; y++)
-            {
-                previews[i].SetPixel(x, y, channelData[i][y * width + x]);
-            }
-        }
+        previews[i].SetPixels(channelData[i]);
         previews[i].Apply(); // 应用像素更改
     }
 
@@ -373,8 +350,7 @@ public class AdvancedTextureToolEditor : EditorWindow
 }
 
 
-
-    private Texture2D CombineChannels(Texture2D inputTexture, int[] inputSelection, int[] outputSelection)
+    private Texture2D CombineChannels(Texture2D inputTexture, int[] outputSelection)
     {
         if (inputTexture == null)
         {
@@ -389,7 +365,7 @@ public class AdvancedTextureToolEditor : EditorWindow
         }
 
         // 验证输入数据的长度
-        if (inputSelection.Length != 4 || outputSelection.Length != 4)
+        if (outputSelection.Length != 4)
         {
             Debug.LogError("Input and output selection arrays must have exactly 4 elements.");
             return null;
@@ -399,12 +375,6 @@ public class AdvancedTextureToolEditor : EditorWindow
         int height = inputTexture.height;
         Texture2D combinedTexture = new Texture2D(width, height, TextureFormat.RGBA32, false);
 
-        Debug.Log($"Input Selection: {string.Join(", ", inputSelection)}");
-        Debug.Log($"Output Selection: {string.Join(", ", outputSelection)}");
-        Debug.Log(Array.IndexOf(inputSelection, outputSelection[0]));
-        Debug.Log(Array.IndexOf(inputSelection, outputSelection[1]));
-        Debug.Log(Array.IndexOf(inputSelection, outputSelection[2]));
-        Debug.Log(Array.IndexOf(inputSelection, outputSelection[3]));
         // 遍历每个像素
         for (int x = 0; x < width; x++)
         {
@@ -422,10 +392,10 @@ public class AdvancedTextureToolEditor : EditorWindow
                 };
 
                 // 根据 outputSelection 重新排列通道
-                float rValue = inputChannels[Array.IndexOf(inputSelection, outputSelection[0])];
-                float gValue = inputChannels[Array.IndexOf(inputSelection, outputSelection[1])];
-                float bValue = inputChannels[Array.IndexOf(inputSelection, outputSelection[2])];
-                float aValue = inputChannels[Array.IndexOf(inputSelection, outputSelection[3])];
+                float rValue = inputChannels[outputSelection[0]];
+                float gValue = inputChannels[outputSelection[1]];
+                float bValue = inputChannels[outputSelection[2]];
+                float aValue = inputChannels[outputSelection[3]];
 
                 // 设置新颜色
                 Color newColor = new Color(rValue, gValue, bValue, aValue);
@@ -482,7 +452,47 @@ public class AdvancedTextureToolEditor : EditorWindow
         }
     }
 
-    private void SaveSplitTexture(Texture2D texture, string fileName)
+private void ExportSplitTextures(Texture2D[] splitTextures, string[] names, ref string exportPath)
+{
+    for (int i = 0; i < 4; i++) // 确保只处理 4 个通道
+    {
+        if (splitTextures[i] != null && !string.IsNullOrEmpty(names[i]))
+        {
+            // 如果路径为空（首次导出），让用户选择路径
+            if (string.IsNullOrEmpty(exportPath))
+            {
+                exportPath = EditorUtility.SaveFolderPanel(
+                    "Select Export Folder", // 对话框标题
+                    Application.dataPath,   // 默认路径
+                    ""                      // 默认文件夹名称
+                );
+
+                // 如果用户取消选择路径，停止导出
+                if (string.IsNullOrEmpty(exportPath))
+                {
+                    Debug.LogWarning($"Export cancelled for Channel {i + 1}. No further channels will be exported.");
+                    return;
+                }
+            }
+
+            // 构建完整的文件路径
+            string fullPath = System.IO.Path.Combine(exportPath, $"{names[i]}.png");
+
+            // 保存通道纹理
+            SaveTextureToPath(splitTextures[i], fullPath);
+            Debug.Log($"Channel {i + 1} exported to: {fullPath}");
+        }
+        else if (string.IsNullOrEmpty(names[i]))
+        {
+            Debug.LogWarning($"Channel {i + 1} skipped because no file name was provided.");
+        }
+    }
+}
+
+
+
+
+private void SaveTextureToPath(Texture2D texture, string fullPath)
 {
     if (texture == null)
     {
@@ -490,59 +500,68 @@ public class AdvancedTextureToolEditor : EditorWindow
         return;
     }
 
-    if (string.IsNullOrEmpty(fileName))
+    try
     {
-        Debug.LogWarning("Cannot save texture with an empty file name.");
+        // 确保目标文件夹存在
+        string directory = System.IO.Path.GetDirectoryName(fullPath);
+        if (!System.IO.Directory.Exists(directory))
+        {
+            System.IO.Directory.CreateDirectory(directory);
+        }
+
+        // 保存纹理为 PNG
+        byte[] bytes = texture.EncodeToPNG();
+        System.IO.File.WriteAllBytes(fullPath, bytes);
+        AssetDatabase.Refresh();
+        Debug.Log($"Texture saved to: {fullPath}");
+    }
+    catch (Exception ex)
+    {
+        Debug.LogError($"Failed to save texture to path: {fullPath}\n{ex.Message}");
+    }
+}
+
+
+
+
+
+private void ExportTextureWithCustomPath(Texture2D texture, ref string exportPath, string defaultFileName)
+{
+    if (texture == null)
+    {
+        Debug.LogWarning("No texture available to export!");
         return;
     }
 
-    // Encode the texture to PNG format
-    byte[] bytes = texture.EncodeToPNG();
+    // 打开保存文件对话框
+    exportPath = EditorUtility.SaveFilePanel("Save Texture", string.IsNullOrEmpty(exportPath) ? Application.dataPath : exportPath, defaultFileName, "png");
 
-    // Ensure the directory exists
-    string directoryPath = "Assets/SplitTextures/";
-    if (!System.IO.Directory.Exists(directoryPath))
+    if (!string.IsNullOrEmpty(exportPath))
     {
-        System.IO.Directory.CreateDirectory(directoryPath);
+        SaveTextureToPath(texture, exportPath);
+        Debug.Log($"Texture exported to: {exportPath}");
     }
-
-    // Define the full file path
-    string path = $"{directoryPath}{fileName}.png";
-
-    // Write the file to disk
-    System.IO.File.WriteAllBytes(path, bytes);
-
-    // Refresh the AssetDatabase to make the file appear in the Unity Editor
-    AssetDatabase.Refresh();
-
-    Debug.Log($"Texture saved at {path}");
+    else
+    {
+        Debug.LogWarning("Export cancelled by the user.");
+    }
 }
 
-   private void ExportSplitTextures(Texture2D[] splitTextures, string[] names)
+
+
+ private void ExportTexture(Texture2D texture, string fileName)
 {
-    for (int i = 0; i < 4; i++)
+    if (texture == null)
     {
-        if (splitTextures[i] != null && !string.IsNullOrEmpty(names[i]))
-        {
-            SaveSplitTexture(splitTextures[i], names[i]);
-        }
+        Debug.LogWarning("No combined texture available to export!");
+        return;
     }
+
+    string path = $"Assets/CombinedTexture/{fileName}.png";
+    SaveTextureToPath(texture, path);
+    Debug.Log($"Texture exported to {path}");
 }
 
-    private void ExportTexture(Texture2D texture, string fileName)
-    {
-        if (texture == null)
-        {
-            Debug.LogWarning("No combined texture available to export!");
-            return;
-        }
-
-        byte[] bytes = texture.EncodeToPNG();
-        string path = "Assets/CombinedTexture/" + fileName + ".png";
-        System.IO.File.WriteAllBytes(path, bytes);
-        AssetDatabase.Refresh();
-        Debug.Log("Texture exported to " + path);
-    }
 
     private string[] GetSelectedTextureOptions(int[] selection)
     {
@@ -571,9 +590,6 @@ public class AdvancedTextureToolEditor : EditorWindow
 
         return selectedOptions.ToArray();
     }
-
-
-
 
 
     private void ShowPreview(Texture2D texture, ref Texture2D previewTexture)
